@@ -1,0 +1,32 @@
+{
+  "name":"currentcost.stream",
+  "version": "1.0.18",
+  "nickName": "Currentcost Realtime",
+  "description": "Sample data from CC meter",
+  "payloadData":[
+    {
+      "name":"sensor",
+      "type":"INT"
+    },
+    {
+      "name":"temp",
+      "type":"FLOAT"
+    },
+    {
+      "name":"timestamp",
+      "type":"LONG"
+    },
+    {
+      "name":"timestampmysql",
+      "type":"STRING"
+    },
+    {
+      "name":"watt",
+      "type":"INT"
+    },
+    {
+      "name":"wattseconds",
+      "type":"INT"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+[
+ {
+   "payloadData" : [SENSOR, TEMP, TIMESTAMP, "MYSQL", WATT, WSECONDS] ,
+ }
+]
