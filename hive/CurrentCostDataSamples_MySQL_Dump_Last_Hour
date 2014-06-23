@@ -1,0 +1,28 @@
+DROP table CurrentCostDataSamples_MySQL_Dump_Last_1_Hour_Summary;
+DROP table CurrentCostDataSamples_MySQL_Dump_Last_1_Hour;
+
+CREATE EXTERNAL TABLE IF NOT EXISTS CurrentCostDataSamples_MySQL_Dump_Last_1_Hour_Summary ( messageRowID STRING, payload_sensor INT, messagetimestamp BIGINT, payload_temp FLOAT, payload_timestamp BIGINT, payload_timestampmysql STRING, payload_watt INT, payload_wattseconds INT ) 
+STORED BY 'org.apache.hadoop.hive.cassandra.CassandraStorageHandler'
+WITH SERDEPROPERTIES ( "cassandra.host" = "127.0.0.1",
+	"cassandra.port" = "9160",
+	"cassandra.ks.name" = "EVENT_KS",
+	"cassandra.ks.username" = "admin",
+	"cassandra.ks.password" = "admin",
+	"cassandra.cf.name" = "currentcost_stream",
+	"cassandra.columns.mapping" = ":key, payload_sensor, Timestamp, payload_temp, payload_timestamp, payload_timestampmysql, payload_watt, payload_wattseconds" );
+
+CREATE EXTERNAL TABLE IF NOT EXISTS CurrentCostDataSamples_MySQL_Dump_Last_1_Hour ( messageRowID STRING, payload_sensor INT, messagetimestamp BIGINT, payload_temp FLOAT, payload_timestamp BIGINT, payload_timestampmysql STRING, payload_watt INT, payload_wattseconds INT ) 
+STORED BY 'org.wso2.carbon.hadoop.hive.jdbc.storage.JDBCStorageHandler'
+TBLPROPERTIES (
+	'mapred.jdbc.driver.class' = 'com.mysql.jdbc.Driver',
+	'mapred.jdbc.url' = 'jdbc:mysql://127.0.0.1:8889/currentcost' ,
+	'mapred.jdbc.username' = 'currentcost',
+	'mapred.jdbc.password' = 'currentcost',
+	'hive.jdbc.update.on.duplicate'= 'true',
+	'hive.jdbc.primary.key.fields' = 'messageRowID',
+	'hive.jdbc.table.create.query' = 'CREATE TABLE CurrentCostDataSamples_MySQL_Dump_Last_1_Hour ( messageRowID VARCHAR(100) NOT NULL PRIMARY KEY, payload_sensor TINYINT(4), messagetimestamp bigint(20), payload_temp FLOAT, payload_timestamp bigint(20), payload_timestampmysql DATETIME, payload_watt INT, payload_wattseconds INT ) ');
+
+insert overwrite table CurrentCostDataSamples_MySQL_Dump_Last_1_Hour 
+select messageRowID, payload_sensor, messagetimestamp, payload_temp, payload_timestamp, payload_timestampmysql, payload_watt, payload_wattseconds 
+FROM CurrentCostDataSamples_MySQL_Dump_Last_1_Hour_Summary
+WHERE payload_timestamp > unix_timestamp() - 1*60*60;
