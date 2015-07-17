@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>CARBON_HOME</key>
+		<string>/Users/jskogsta/local/wso2bam-2.4.1</string>
+		<key>JAVA_HOME</key>
+		<string>/Library/Java/JavaVirtualMachines/1.6.0_65-b14-462.jdk/Contents/Home</string>
+		<key>PATH</key>
+		<string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Applications/Server.app/Contents/ServerRoot/usr/bin:/Applications/Server.app/Contents/ServerRoot/usr/sbin:/usr/local/sbin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>org.wso2.bam</string>
+	<key>LaunchOnlyOnce</key>
+	<true/>
+	<key>Program</key>
+	<string>/Users/jskogsta/local/wso2bam-2.4.1/bin/wso2server.sh</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>--start</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/jskogsta/local/wso2bam-2.4.1/logs/bam-launchd.stderr</string>
+	<key>StandardOutPath</key>
+	<string>/Users/jskogsta/local/wso2bam-2.4.1/logs/bam-launchd.stdout</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/jskogsta/local/wso2bam-2.4.1/</string>
+</dict>
+</plist>

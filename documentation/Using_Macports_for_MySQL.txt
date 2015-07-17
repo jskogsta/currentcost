@@ -1,0 +1,26 @@
+Using Macports is an easy and quick way to install *NIX software on a mac, but
+there was an issue that I had to debug for a little while, which seems obvious..
+but threw me. When installing it using Macports it does not open a tcp port
+(like the default 3306) by default, and you have to override the settings. E.g:
+
+I found this by chance on this web page: http://blog.bobbyallen.me/2013/07/30/installing-php-and-mysql-on-macosx-using-macports-for-development/
+
+1) Stop mysql from running by using this command:
+
+# sudo port unload mysql55-server
+
+2) Uncomment the ‘skip networking’ line in /opt/local/etc/mysql55/macports-default.cnf file
+
+3) Start mysql again by using this command: 
+
+# sudo port load mysql55-server
+
+Now the hive queries from WSO2BAM should work.
+
+.
+.
+
+You can use the following command to check the open ports: 
+
+# lsof -i -P | grep -i "listen"
+

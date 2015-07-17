@@ -1,16 +1,16 @@
-#!/usr/bin/perl -w
+#!/opt/local/bin/perl -w
 #
 # File:			currentcost_daemon.pl
 # Version info:	This version is the basic one, which only gets the raw data and transforms to BAM & MySQL data. It does not create the
 #				added information that relates to watt_seconds, which can be used for the data presentation & assumptions. The background for
 #				that requirement is that the Currentcost sends samples at varying times. Hence we have to normalise the data with this in 
 #				mind.
-# Project: 		Currentcost perl daemon to be run on a Tonidoplug v1
-# Purpose: 		The purpose of this perl daemon is to continously monitor the inbound /dev/ttyUSB0 channel for XML data that represents energy
+# Project: 		Currentcost perl daemon to be run on a MacMini Yosemite (previous on a Tonidoplug V1). 
+# Purpose: 		The purpose of this perl daemon is to continously monitor the inbound /dev/tty.PL2303-00004014 (Currentcost USB cable) channel for XML data that represents energy
 #				samples, which will have to be parsed and pumped into a MySQL database. This database will serve as the data store from which 
 #				the front-end will derive its data to present useful graphs, events, triggers etc.
 # Filename: 	ccost.pl
-# Last updated:	Sunday June 8th 2014
+# Last updated:	Friday October 24th 2014
 # By whom?:		Jorgen Skogstad ( jorgen@skogstad.com )
 #
 # Information relevant to the program given below: 
@@ -45,6 +45,54 @@
 #	      <watts>00000</watts>
 #	   </ch3>
 #	</msg>
+#
+#<msg>
+#	<src>CC128-v1.31</src>
+#	<dsb>01360</dsb>
+#	<time>15:07:50</time>
+#	<hist>
+#		<dsw>01362</dsw>
+#		<type>1</type>
+#		<units>kwhr</units>
+#		<data><sensor>0</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>1</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>2</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>3</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>4</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>5</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>6</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>7</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>8</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		<data><sensor>9</sensor><h424>0.000</h424><h422>0.000</h422><h420>0.000</h420><h418>0.000</h418></data>
+#		</hist>
+#</msg>
+#
+#
+#<msg>
+#<src>CC128-v1.31</src>
+#<dsb>01360</dsb>
+#<time>15:07:39</time>
+#<tmpr>20.6</tmpr>
+#<sensor>0</sensor>
+#<id>03995</id>
+#<type>1</type>
+#<ch1>
+#	<watts>00505</watts>
+#</ch1>
+#</msg>
+#
+# Note on the use of WSO2 BAM as a container for data store: 
+# ----------------------------------------------------------
+# Given this script is experimental at best, this will evolve. The current version (as of October 2014) commits to MySQL as well as Cassandra. The reason for this is to use
+# Cassandra/HIVE to create dynamically updated MySQL tables that can be used to display data in close to "real time" manner. This will be likely done using a local web front end
+# to start with. Perhaps to sync to mobile device eventually ... 
+#
+# .. and I am considering playing around with Couchbase too as a container. Need to figure out how that will work, but reason for this is that Couchbase already deals with the 
+# distributed ongoing sync operations, which is a bit of a drag with a RDBMS. However, not figured out how you would build the mobile application to interact with say an on device
+# Couchbase to represent the data visually. Perhaps something to look at in the long term .. 
+#
+# Some further notes on how this scripts functions:
+# ---------------------------------------------------
 #
 # The data above is sent over the serialport from the Currentcost as a single line (see url: http://www.jibble.org/currentcost/). Hence simple to parse based on inbound serial port loop!
 # It seems like the Curentcost EnviR meter will send out a message of the type above for each sensor message that is received from the various sensors.
@@ -94,14 +142,14 @@ use File::Slurp;
 
 # Daemonise the Perl program to log the Currentcost data to MySQL
 #Proc::Daemon::Init;
-#my $continue = 1;
+my $continue = 1;
 #$SIG{TERM} = sub { $continue = 0 };
 
 # Initialize Logger
 my $log_conf = q(
    log4perl.rootLogger              = DEBUG, LOG1
    log4perl.appender.LOG1           = Log::Log4perl::Appender::File
-   log4perl.appender.LOG1.filename  = /Users/jskogsta/projects/ccost/ccost.log
+   log4perl.appender.LOG1.filename  = /Users/jskogsta/projects/currentcost/log/ccost.log
    log4perl.appender.LOG1.mode      = append
    log4perl.appender.LOG1.layout    = Log::Log4perl::Layout::PatternLayout
    log4perl.appender.LOG1.layout.ConversionPattern = %d %p %m %n
@@ -110,9 +158,11 @@ Log::Log4perl::init(\$log_conf);
 
 my $logger = Log::Log4perl->get_logger();
 
+$logger->info("Initializing script .......");
+
 # Use local file for inbound test OR serial port
-my $local_or_serial = 0;	# 0 = local file, 1 = serial port
-my $local_xmlfile = "/Users/jskogsta/projects/ccost/ccost.xml";
+my $local_or_serial = 1;	# 0 = local file, 1 = serial port
+my $local_xmlfile = "/Users/jskogsta/projects/currentcost/ccost.xml";
 # Are we going to use debug logging, or not?
 my $logging = 1;			# 0 = logging off, 1 = logging on. 
 my $cc_last_sample_epoch_time = 0;		# storing the last epoch which was the last time the CC sent a sample. Used to calculate watt_seconds
@@ -121,7 +171,7 @@ my $cc_last_sample_epoch_time = 0;		# storing the last epoch which was the last 
 my $db_connection = ConnectToMySql(my $database);
 
 # Given we daemonise the program, it will just continue to loop through from there and continue pumping data to MySQL ..
-#while ($continue) {
+while ($continue) {
 
 	if ($local_or_serial == 0) {
 			# Testing against local file
@@ -144,7 +194,7 @@ my $db_connection = ConnectToMySql(my $database);
 
 		} else {
 			# Production; using the serial port
-			my $PORT = "/dev/ttyUSB0";
+			my $PORT = "/dev/tty.PL2303-00004014";		# This is the USB driver for the white USB Currentcost cable.
 
 			if ($logging == 1) { $logger->info("Running production against: $PORT") };
 
@@ -158,120 +208,127 @@ my $db_connection = ConnectToMySql(my $database);
 			open(SERIAL, "+>$PORT") or die "$!\n";
 
 			while (my $line = <SERIAL>) {
-				if ($logging == 1) { $logger->info("Inbound line: $line") };
 				&parse_cc_xml($line, $db_connection);
-
 			}		
 
 		}
-#}
+}
 
 sub parse_cc_xml {
-	if ($logging ==1) { $logger->info("parse_cc_xml") };
 
 	my $logger = Log::Log4perl->get_logger();
 
 	# Create a new XML parser
 	my $parser = XML::LibXML->new();
 	my $doc = $parser->parse_string( $_[0] );
-	# <msg><src>CC128-v0.11</src><dsb>00089</dsb><time>13:02:39</time><tmpr>18.7</tmpr><sensor>1</sensor><id>01234</id><type>1</type><ch1><watts>00345</watts></ch1></msg>
 
-	# DEFINE CORRECT MySQL TIMESTAMP
-	# Find the timestamp in the XML file, but will not use this given the uncertainty of the timestamp being correct. Rather use the NTP sync'ed value on the computer ..
-	my $time = $doc->find('//time');
-	# Break up the HH:MM:SS format derived from the Currentcost xml
-	my ($hours, $minutes, $seconds) = split(/:/, $time);
-	my $tm = localtime; 
-	#my $timestamp = ($tm->hour . ':' . $tm->min . ':' . $tm->sec);					# No need for this based on current time as this is given by the Currentcost meter, or could replace if need be.. prob better if computers are NTP time sync'ed.
-	my $datestamp = ($tm->year+1900 . '-' . (($tm->mon)+1) . '-' . $tm->mday);
-	# Using the computers timestamp given this is NTP sync'ed, which most likely is better given the uncertainty on wrong timestamps set on Currentcost itself .. 
-	my $dat = DateTime->new( year => $tm->year+1900, month => (($tm->mon)+1), day => $tm->mday, hour => $tm->hour, minute => $tm->min, second => $tm->sec );
-	#my $dat = DateTime->new( year => $tm->year+1900, month => (($tm->mon)+1), day => $tm->mday, hour => $hours, minute => $minutes, second => $seconds );
-	# Convert to MySQL datetime format, ready for SQL INSERT statement
-	my $mysql_datetime_stamp = DateTime::Format::MySQL->format_datetime($dat);
+	# This XML tag only exists in the 'simple' XML file; e.g. the one that has the energy sample, and not the one that is the aggregate. Hence lets use this to differentiate whether this is a 
+	# sample that we want to commit to the database, or not.
+	my $bool = $doc->exists('//tmpr'); 
+	if ($logging == 1) { $logger->info("Inbound line: $_[0]") };
+	if ($bool == 1) { 
+		$logger->info("Normal energy sample found.");
 
-	# DEFINE TEMP (CELCIUS)
-	my $temp = $doc->find('//tmpr');
+		# DEFINE CORRECT MySQL TIMESTAMP
+		# Find the timestamp in the XML file, but will not use this given the uncertainty of the timestamp being correct. Rather use the NTP sync'ed value on the computer ..
+		my $time = $doc->find('//time');
+		# Break up the HH:MM:SS format derived from the Currentcost xml
+		my ($hours, $minutes, $seconds) = split(/:/, $time);
+		my $tm = localtime; 
+		#my $timestamp = ($tm->hour . ':' . $tm->min . ':' . $tm->sec);					# No need for this based on current time as this is given by the Currentcost meter, or could replace if need be.. prob better if computers are NTP time sync'ed.
+		my $datestamp = ($tm->year+1900 . '-' . (($tm->mon)+1) . '-' . $tm->mday);
+		# Using the computers timestamp given this is NTP sync'ed, which most likely is better given the uncertainty on wrong timestamps set on Currentcost itself .. 
+		my $dat = DateTime->new( year => $tm->year+1900, month => (($tm->mon)+1), day => $tm->mday, hour => $tm->hour, minute => $tm->min, second => $tm->sec );
+		#my $dat = DateTime->new( year => $tm->year+1900, month => (($tm->mon)+1), day => $tm->mday, hour => $hours, minute => $minutes, second => $seconds );
+		# Convert to MySQL datetime format, ready for SQL INSERT statement
+		my $mysql_datetime_stamp = DateTime::Format::MySQL->format_datetime($dat);
 
-	# DEFINE SENSOR ID
-	my $sensor_id = $doc->find('//sensor');
+		# DEFINE TEMP (CELCIUS)
+		my $temp = $doc->find('//tmpr');
 
-	# DEFINE WATTAGE
-	my $wattage = $doc->find('./msg/ch1/watts');
-	#my @channels;
-	#my @nodelist = $nodeset1->get_nodelist;
-	#@channels = map($_->string_value, @nodelist);
-	# Remove leading 0'es from the wattage strings, and assuming that each sensor have only ONE channel - e.g. one WATTAGE item..
-	$wattage =~ s/^0+//;
-	
-	if ($logging ==1) { $logger->info($temp, ", ", $sensor_id, ", ", $mysql_datetime_stamp, ", ", $wattage) };
+		# DEFINE SENSOR ID
+		my $sensor_id = $doc->find('//sensor');
 
-	# Prepare the local temp JSON data object that will be pushed to WSO2BAM using curl. The data structure of the file is:
-	#
-	#	[
-	#		{
-	#		"payloadData" : ["SENSOR", TEMP, TIMESTAMP, WATT] ,
-	#		}
-	#	]
+		# DEFINE WATTAGE
+		my $wattage = $doc->find('./msg/ch1/watts');
+		#my @channels;
+		#my @nodelist = $nodeset1->get_nodelist;
+		#@channels = map($_->string_value, @nodelist);
+		# Remove leading 0'es from the wattage strings, and assuming that each sensor have only ONE channel - e.g. one WATTAGE item..
+		$wattage =~ s/^0+//;
+		
+		if ($logging ==1) { $logger->info($temp, ", ", $sensor_id, ", ", $mysql_datetime_stamp, ", ", $wattage) };
 
-	my $sensor_old = "SENSOR";
-	my $sensor_new = $sensor_id;
-	my $temp_old = "TEMP";
-	my $temp_new = $temp;
-	my $unix_epoch_time_old = "TIMESTAMP";
-	my $unix_epoch_time_new = time;
-	my $timestamp_mysql_old = "MYSQL";
-	my $timestamp_mysql_new = "$mysql_datetime_stamp";
-	my $watt_old = "WATT";
-	my $watt_new = int($wattage); 					# $watt_old is not defined; just using the reference to the value array later..
-	my $watt_seconds_old = "WSECONDS";				# this holds the consumed watts since last sample, using UNIX epoch time as the reference
-	my $epoch_seconds_diff = 0;
+		# Prepare the local temp JSON data object that will be pushed to WSO2BAM using curl. The data structure of the file is:
+		#
+		#	[
+		#		{
+		#		"payloadData" : ["SENSOR", TEMP, TIMESTAMP, WATT] ,
+		#		}
+		#	]
 
-	# Read the JSON template that we have to update with the right values. Done only once..
-	my $json_template = read_file( 'currentcostRealtime_json_template_simple.json' ) ;
-	my $json_template_payload = read_file( 'currentcostRealtime_json_template_payload_simple.json' );
+		my $sensor_old = "SENSOR";
+		my $sensor_new = $sensor_id;
+		my $temp_old = "TEMP";
+		my $temp_new = $temp;
+		my $unix_epoch_time_old = "TIMESTAMP";
+		my $unix_epoch_time_new = time;
+		my $timestamp_mysql_old = "MYSQL";
+		my $timestamp_mysql_new = "$mysql_datetime_stamp";
+		my $watt_old = "WATT";
+		my $watt_new = int($wattage); 					# $watt_old is not defined; just using the reference to the value array later..
+		my $watt_seconds_old = "WSECONDS";				# this holds the consumed watts since last sample, using UNIX epoch time as the reference
+		my $epoch_seconds_diff = 0;
 
-	$json_template_payload =~ s/$sensor_old/$sensor_new/g;
-	$json_template_payload =~ s/$temp_old/$temp_new/g;
-	$json_template_payload =~ s/$unix_epoch_time_old/$unix_epoch_time_new/g;
-	$json_template_payload =~ s/$timestamp_mysql_old/$timestamp_mysql_new/g;
-	$json_template_payload =~ s/$watt_old/$watt_new/g;
-	# Calculate the watt seconds consumed since last sample
-	if ($logging == 1) { $logger->info("The local UNIX epoch time is: $unix_epoch_time_new, and the last sample time was: $cc_last_sample_epoch_time") };
-	if ($cc_last_sample_epoch_time == 0) {
-		$cc_last_sample_epoch_time = $unix_epoch_time_new;
+		# Read the JSON template that we have to update with the right values. Done only once..
+		my $json_template = read_file( '/Users/jskogsta/projects/currentcost/currentcostRealtime_json_template_simple.json' ) ;
+		my $json_template_payload = read_file( '/Users/jskogsta/projects/currentcost/currentcostRealtime_json_template_payload_simple.json' );
+
+		$json_template_payload =~ s/$sensor_old/$sensor_new/g;
+		$json_template_payload =~ s/$temp_old/$temp_new/g;
+		$json_template_payload =~ s/$unix_epoch_time_old/$unix_epoch_time_new/g;
+		$json_template_payload =~ s/$timestamp_mysql_old/$timestamp_mysql_new/g;
+		$json_template_payload =~ s/$watt_old/$watt_new/g;
+		# Calculate the watt seconds consumed since last sample
+		if ($logging == 1) { $logger->info("The local UNIX epoch time is: $unix_epoch_time_new, and the last sample time was: $cc_last_sample_epoch_time") };
+		if ($cc_last_sample_epoch_time == 0) {
+			$cc_last_sample_epoch_time = $unix_epoch_time_new;
+		} else {
+			$epoch_seconds_diff = ($unix_epoch_time_new - $cc_last_sample_epoch_time);
+			$cc_last_sample_epoch_time = $unix_epoch_time_new;
+		}
+
+		if ($logging == 1) { $logger->info("Seconds since last sample: $epoch_seconds_diff") };
+
+		my $watt_seconds_new = $watt_new * $epoch_seconds_diff; 	# This derives the amount of watt_seconds consumed since last sample, and is what we will store as consumed energy.
+		$json_template_payload =~ s/$watt_seconds_old/$watt_seconds_new/g;
+		if ($logging == 1) { $logger->info("Number of watt_seconds consumption in between now and last sample is $watt_seconds_new") };
+
+		open FILE, ">/Users/jskogsta/projects/currentcost/.currentcostRealtime_json_template_test.json";  #opens file to be written to
+		print FILE $json_template;             #write it to our file
+		close FILE;                   #then close our file.
+		open FILE, ">/Users/jskogsta/projects/currentcost/.currentcostRealtime_json_template_payload_test.json";  #opens file to be written to
+		print FILE $json_template_payload;             #write it to our file
+		close FILE;                   #then close our file.
+
+		if ($logging == 1) { $logger->info("Committing data to WSO2 BAM Cassandra..") };
+		system('/opt/local/bin/curl -k --user admin:admin https://localhost:9443/datareceiver/1.0.0/streams/ --data @/Users/jskogsta/projects/currentcost/.currentcostRealtime_json_template_test.json -H "Accept: application/json" -H "Content-type: application/json" -X POST');
+		system('/opt/local/bin/curl -k --user admin:admin https://localhost:9443/datareceiver/1.0.0/stream/currentcost.stream/1.0.18/ --data @/Users/jskogsta/projects/currentcost/.currentcostRealtime_json_template_payload_test.json -H "Accept: application/json" -H "Content-type: application/json" -X POST');
+
+		# Build the MySQL INSERT query that has to be executed
+		my $query = "insert into CurrentCostDataSamples_MySQL_Dump_Raw (timestamp, temp, sensor_id, watts) 
+			values (?, ?, ?, ?) ";
+
+		# prepare your statement for connecting to the database
+		my $statement = $_[1]->prepare($query);
+
+		# execute your SQL statement
+		if ($logging == 1) { $logger->info("Committing data to MySQL..") };
+		$statement->execute($mysql_datetime_stamp, $temp, $sensor_id, $watt_new);
+
 	} else {
-		$epoch_seconds_diff = ($unix_epoch_time_new - $cc_last_sample_epoch_time);
-		$cc_last_sample_epoch_time = $unix_epoch_time_new;
+		$logger->info("Aggregate energy sample found.");
 	}
-
-	if ($logging == 1) { $logger->info("Seconds since last sample: $epoch_seconds_diff") };
-
-	my $watt_seconds_new = $watt_new * $epoch_seconds_diff; 	# This derives the amount of watt_seconds consumed since last sample, and is what we will store as consumed energy.
-	$json_template_payload =~ s/$watt_seconds_old/$watt_seconds_new/g;
-	if ($logging == 1) { $logger->info("Number of watt_seconds consumption in between now and last sample is $watt_seconds_new") };
-
-	open FILE, ">.currentcostRealtime_json_template_test.json";  #opens file to be written to
-	print FILE $json_template;             #write it to our file
-	close FILE;                   #then close our file.
-	open FILE, ">.currentcostRealtime_json_template_payload_test.json";  #opens file to be written to
-	print FILE $json_template_payload;             #write it to our file
-	close FILE;                   #then close our file.
-
-	system('/opt/local/bin/curl -k --user admin:admin https://localhost:9443/datareceiver/1.0.0/streams/ --data @.currentcostRealtime_json_template_test.json -H "Accept: application/json" -H "Content-type: application/json" -X POST');
-	system('/opt/local/bin/curl -k --user admin:admin https://localhost:9443/datareceiver/1.0.0/stream/currentcost.stream/1.0.18/ --data @.currentcostRealtime_json_template_payload_test.json -H "Accept: application/json" -H "Content-type: application/json" -X POST');
-
-
-
-	# Build the MySQL INSERT query that has to be executed
-	my $query = "insert into CurrentCostDataSamples_MySQL_Dump_Raw (timestamp, temp, sensor_id, watts) 
-		values (?, ?, ?, ?) ";
-
-	# prepare your statement for connecting to the database
-	my $statement = $_[1]->prepare($query);
-
-	# execute your SQL statement
-	$statement->execute($mysql_datetime_stamp, $temp, $sensor_id, $watt_new);
 
 }
 
@@ -280,7 +337,7 @@ sub ConnectToMySql {
 
 	# MySQL database configuration
 	my $db = 'currentcost';
-	my $host = '127.0.0.1';
+	my $host = 'localhost';
 	my $user = 'currentcost';
 	my $pass = 'currentcost';
 	my $port = '8889';

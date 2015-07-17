@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnableGlobbing</key>
+	<true/>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>org.currentcost</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/local/bin/perl</string>
+		<string>/Users/jskogsta/projects/currentcost/currentcost_daemon.pl</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+</dict>
+</plist>
